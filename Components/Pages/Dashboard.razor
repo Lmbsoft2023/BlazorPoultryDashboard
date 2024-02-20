@@ -1,0 +1,191 @@
+﻿@page "/dashboard"
+@rendermode InteractiveServer
+
+
+@using BlazorPoultryDashboard.Application.Database.SQLCe
+@using System.Net.Http.Json
+@using BlazorPoultryDashboard.Application.Notifications.Events
+@using BlazorPoultryDashboard.Application.Services
+@using BlazorPoultryDashboard.Domain.Enums
+@using BlazorPoultryDashboard.Domain.Interfaces
+@using MudBlazor
+
+@inject IConfiguration Configuration
+@inject IConfigurationRoot ConfigurationRoot
+@inject BirdDataReceiver _birdDataReceiver
+@inject IDbEventNotifier _dbEventNotifier
+@inject IThresholdLimitNotifier _thresholdLimitNotifier
+@inject ISnackbar Snackbar
+
+<MyMudProviders />
+
+    @if (Birds != null && Birds.Any())
+    {
+    <MudTabs Outlined="true" Position="@Position.Top" Rounded="true" Border="true"
+    ApplyEffectsToContainer="true" Class="mt-8" PanelClass="pa-6">
+        <MudTabPanel Text="Weight Threshold">
+            <MudAlert Severity="Severity.Warning">Press Enter once updated!</MudAlert>
+            <br />
+            <div class="d-flex flex-rows flex-wrap mr-4">
+                <MudNumericField @bind-Value="weightMaxThreshold" Label="Weight Max Threshold" Variant="Variant.Outlined" Step=".2M" />
+                <MudNumericField @bind-Value="weightMinThreshold" Label="Weight Min Threshold" Variant="Variant.Outlined" Step=".2M" />
+            </div>
+        </MudTabPanel>
+        <MudTabPanel Text="Filter Functions">
+            <div class="d-flex flex-wrap mt-4">
+                <MudRadioGroup T="DataGridFilterMode" @bind-SelectedOption="@_filterMode">
+                    <MudRadio Dense="true" Option="@DataGridFilterMode.Simple" Color="Color.Tertiary">Simple</MudRadio>
+                    <MudRadio Dense="true" Option="@DataGridFilterMode.ColumnFilterMenu" Color="Color.Tertiary">Column Menu</MudRadio>
+                    <MudRadio Dense="true" Option="@DataGridFilterMode.ColumnFilterRow" Color="Color.Tertiary">Column Row</MudRadio>
+                </MudRadioGroup>
+            </div>
+        </MudTabPanel>
+        <MudTabPanel Text="Column Functions">
+                <div class="d-flex flex-rows flex-wrap mr-4">
+                    <MudSwitch @bind-Checked="@_dragDropReorderingEnabled" Color="Color.Primary">Drag Drop Column Reordering</MudSwitch>
+                    <MudSwitch @bind-Checked="@_columnsPanelReorderingEnabled" Color="Color.Primary">Columns Panel Column Reordering</MudSwitch>
+                    <MudSwitch @bind-Checked="@_hideable" Color="Color.Primary">Hideable</MudSwitch>
+                    <MudSwitch @bind-Checked="@_filterable" Color="Color.Primary">Filterable</MudSwitch>
+                    <MudSwitch @bind-Checked="@_groupable" Color="Color.Primary">Groupable</MudSwitch>
+                </div>
+        </MudTabPanel>
+        <MudTabPanel Text="Grid Functions">
+            <div class="d-flex flex-rows flex-wrap mr-4">
+                <MudSwitch @bind-Checked="@_gridRefreshing" Color="Color.Primary">Refresh Data Flow</MudSwitch>
+            </div>
+        </MudTabPanel>
+    </MudTabs>
+    <MudDataGrid T="Bird" @ref="grid" Items="@Birds" DragDropColumnReordering="@_dragDropReorderingEnabled" ColumnsPanelReordering="@_columnsPanelReorderingEnabled"
+                 ColumnResizeMode="ResizeMode.Container" Hideable="@_hideable" Filterable="@_filterable" Groupable="@_groupable" FilterMode="@_filterMode" ShowMenuIcon="true">
+        <Columns>
+            <SelectColumn T="Bird" />
+            <PropertyColumn Property="x => x.Id" Title="Nr" CellStyleFunc="@_cellStyleFunc" Resizable="false" Hidden="false" Hideable="true" DragAndDropEnabled="true" Groupable="true" Sortable="true" Filterable="true" />
+            <PropertyColumn Property="x => x.TracingId" Title="Tracing ID" CellStyleFunc="@_cellStyleFunc" Hidden="false" Hideable="true" DragAndDropEnabled="true" Groupable="true" Sortable="true" Filterable="true" />
+            <PropertyColumn Property="x => (int)x.Weight" Title="Weight [g]" CellStyleFunc="@_cellStyleFunc" Hidden="false" Hideable="true" DragAndDropEnabled="true" Groupable="true" Sortable="true" Filterable="true" />
+            <PropertyColumn Property="x => GradeToString(x.Grade)" Title="Grade" CellStyleFunc="@_cellStyleFunc" Hidden="false" Hideable="true" DragAndDropEnabled="true" Groupable="true" Sortable="true" Filterable="true" />
+            <PropertyColumn Property="x => x.DropOff" Title="DropOff" CellStyleFunc="@_cellStyleFunc" Hidden="false" Hideable="true" DragAndDropEnabled="true" Groupable="true" Sortable="true" Filterable="true" />
+            <PropertyColumn Property="x => x.WeightShackleId" CellStyleFunc="@_cellStyleFunc" Hidden="true" Hideable="true" DragAndDropEnabled="true" Groupable="true" Sortable="true" Filterable="true" />
+            <PropertyColumn Property="x => x.WeightDate" CellStyleFunc="@_cellStyleFunc" Hidden="false" Hideable="true" DragAndDropEnabled="true" Groupable="true" Sortable="true" Filterable="true" />
+            <PropertyColumn Property="x => x.GradeShackleId" CellStyleFunc="@_cellStyleFunc" Hidden="true" Hideable="true" DragAndDropEnabled="true" Groupable="true" Sortable="true" Filterable="true" />
+            <PropertyColumn Property="x => x.GradeDate" CellStyleFunc="@_cellStyleFunc" Hidden="true" Hideable="true" DragAndDropEnabled="true" Groupable="true" Sortable="true" Filterable="true" />
+            <PropertyColumn Property="x => x.DropOffShackleId" CellStyleFunc="@_cellStyleFunc" Hidden="true" Hideable="true" DragAndDropEnabled="true" Groupable="true" Sortable="true" Filterable="true" />
+            <PropertyColumn Property="x => x.DropOffDate" CellStyleFunc="@_cellStyleFunc" Hidden="true" Hideable="true" DragAndDropEnabled="true" Groupable="true" Sortable="true" Filterable="true" />
+        </Columns>
+        <PagerContent>
+            <MudDataGridPager T="Bird" />
+        </PagerContent>
+    </MudDataGrid>
+
+    }
+    else
+    {
+        <MudAlert Severity="Severity.Warning">No data available</MudAlert>
+    }
+
+@code {
+    private IEnumerable<Bird>? Birds;
+    DataGridFilterMode _filterMode = DataGridFilterMode.ColumnFilterRow;
+    bool _dragDropReorderingEnabled = true;
+    bool _columnsPanelReorderingEnabled = true;
+    bool _hideable = true;
+    bool _filterable = true;
+    bool _groupable = true;
+    bool _gridRefreshing = true;
+    public MudDataGrid<Bird> grid = null;
+    private bool _resizeColumn = false;
+    private bool _showAllColumns;
+    public decimal weightMaxThreshold { get; set; } = 3500M;
+    public decimal weightMinThreshold { get; set; } = 1500M;
+
+    // style the cells according to weight.
+    private Func<Bird, string> _cellStyleFunc => x =>
+    {
+
+        StoreThreshold();
+
+        string style = "";
+
+        if (x.Weight >= Convert.ToDouble(weightMaxThreshold)) //Convert to double because Mud component accepts only decimal.
+            style += "background-color:#FF0000;color:white";
+        else if (x.Weight <= Convert.ToDouble(weightMinThreshold)) //Convert to double because Mud component accepts only decimal.
+            style += "background-color:#F1F165;color:black";
+        else
+            style += "background-color:#8CED8C;color:black";
+
+        return style;
+    };
+
+    // style the cells according to the grade string.
+    private string GradeToString(int Grade)
+    {
+        int grade = Grade;
+        Grade gradeEnum = (Grade)grade;
+        return gradeEnum.ToString();
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        _thresholdLimitNotifier.MaxThresholdAlarm += HandleMaxThresholdAlarm!;
+        _thresholdLimitNotifier.MinThresholdAlarm += HandleMinThresholdAlarm!;
+        _dbEventNotifier.DataSaved += HandleDataSaved!;
+        HandleDataSaved(null, null);
+    }
+
+    private async void HandleMaxThresholdAlarm(object sender, BirdEventArgs e) => 
+    await Task.Run(() => Message($"Maximum Weight Threshold has been reached. <br/> [ Id => {e.Bird.TracingId} ] <br/> [ Weight => {(int)e.Bird.Weight} ]", Severity.Error));
+
+    private async void HandleMinThresholdAlarm(object sender, BirdEventArgs e) =>
+    await Task.Run(() => Message($"Minimum Weight Threshold has been reached. <br/> [ Id => {e.Bird.TracingId} ] <br/> [ Weight => {(int)e.Bird.Weight} ]", Severity.Warning));
+
+    private async void HandleDataSaved(object sender, EventArgs e)
+    {
+        if (_gridRefreshing)
+        {  // GET request to DB:
+            var birdsDescending = await _birdDataReceiver.GetBirdsAsync();
+            Birds = birdsDescending.OrderByDescending(_ => _.Id);
+            InvokeAsync(() => { StateHasChanged(); });
+        }
+    }
+
+    void Message(string message, Severity severity)
+    {
+        Snackbar.Configuration.PositionClass = "Bottom";
+        Snackbar.Add(message, severity);
+        InvokeAsync(() => { StateHasChanged(); });
+    }
+
+    private void StoreThreshold()
+    {
+        decimal maxThreshold = Convert.ToDecimal(GetSessionStorageValue("max"));
+        decimal minThreshold = Convert.ToDecimal(GetSessionStorageValue("min"));
+        if (weightMaxThreshold !=  maxThreshold)
+        {
+            SetSessionStorageValue("max", weightMaxThreshold.ToString());
+        }
+        else if (weightMinThreshold !=  minThreshold)
+        {
+            SetSessionStorageValue("min", weightMinThreshold.ToString());
+        }
+    }
+
+    // Method to set a value in sessionStorage
+    private async void SetSessionStorageValue(string key, string value)
+    {
+        var settingsSection = ConfigurationRoot.GetSection("WeightThreshold");
+        // Update the value of a setting
+        settingsSection[key] = value;
+        // Commit the changes
+        ConfigurationRoot.Reload();
+    }
+
+    // Method to get a value from sessionStorage
+    private string GetSessionStorageValue(string key)
+    {
+        return Configuration[$"WeightThreshold:{key}"]!;
+    }
+
+    private void Dispose()
+    {
+        _dbEventNotifier.DataSaved -= HandleDataSaved!;
+    }
+}
